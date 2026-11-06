@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, Switch, Alert, Linking, Image } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
@@ -6,7 +6,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Screen, Header, Card, Btn, Field, Row, Bar, Section, Logo, fmt } from '../components';
 import { useStore, totals, today, parseDate } from '../store';
 import { C, CAT, CATS } from '../theme';
-import type { ExpenseCategory, Navigation, SavingsGoal, Transaction } from '../types';
+import type { ExpenseCategory, ManagedAccount, Navigation, SavingsGoal, Transaction } from '../types';
 
 type ScreenProps = { nav: Navigation };
 
@@ -232,7 +232,7 @@ export function AddSavings({ nav }: ScreenProps) {
 }
 
 export function Profile({ nav }: ScreenProps) {
-  const { s, set } = useStore();
+  const { s, set, isAdmin, backend } = useStore();
   const [photoBusy, setPhotoBusy] = useState(false);
   const editAvatar = () => {
     const options: Array<{ text: string; onPress?: () => void; style?: 'cancel' | 'destructive' }> = [
@@ -297,6 +297,8 @@ export function Profile({ nav }: ScreenProps) {
       <Card style={{ paddingVertical: 2 }}>
         <Item icon="flag" label="Saved goals" onPress={() => nav.go('Savings')} />
         <Item icon="lock-closed" label="Account security" onPress={() => nav.go('AccountSecurity')} />
+        {backend === 'supabase' && isAdmin ? <Item icon="people" label="Manage accounts" onPress={() => nav.go('AccountManagement')} /> : null}
+        {backend === 'supabase' && isAdmin ? <Item icon="restaurant" label="Manage meal menu" onPress={() => nav.go('MealManagement')} /> : null}
         <Item icon="settings" label="Settings" onPress={() => nav.go('Settings')} />
       </Card>
       <Btn label="Edit Budget" onPress={() => nav.go('EditBudget')} />
@@ -305,7 +307,7 @@ export function Profile({ nav }: ScreenProps) {
 }
 
 export function AccountSecurity({ nav }: ScreenProps) {
-  const { updatePassword } = useStore();
+  const { updatePassword, backend } = useStore();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -317,8 +319,8 @@ export function AccountSecurity({ nav }: ScreenProps) {
       setError('Complete all password fields.');
       return;
     }
-    if (newPassword.length < 4) {
-      setError('Your new password must be at least 4 characters.');
+    if (newPassword.length < (backend === 'supabase' ? 6 : 4)) {
+      setError(`Your new password must be at least ${backend === 'supabase' ? 6 : 4} characters.`);
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -337,7 +339,7 @@ export function AccountSecurity({ nav }: ScreenProps) {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-      Alert.alert('Password updated', 'Your password has been changed on this device.');
+      Alert.alert('Password updated', backend === 'supabase' ? 'Your online account password has been changed.' : 'Your password has been changed on this device.');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to update your password. Please try again.');
     } finally {
@@ -347,11 +349,13 @@ export function AccountSecurity({ nav }: ScreenProps) {
 
   return (
     <Screen>
-      <Header title="Account security" sub="Change the password for this device account." onBack={nav.back} />
+      <Header title="Account security" sub={backend === 'supabase' ? 'Change your online account password.' : 'Change the password for this device account.'} onBack={nav.back} />
       <Card style={{ backgroundColor: '#EAF3E8', borderColor: '#EAF3E8' }}>
         <Ionicons name="shield-checkmark-outline" size={22} color={C.green} />
         <Text style={{ color: C.text, lineHeight: 20, marginTop: 7 }}>
-          Enter your current password to set a new one. Your account is stored on this device, so the change won’t sync to other devices.
+          {backend === 'supabase'
+            ? 'Enter your current password to verify your account, then set a new password. It will apply anywhere you log in.'
+            : 'Enter your current password to set a new one. Your account is stored on this device, so the change won’t sync to other devices.'}
         </Text>
       </Card>
       {error ? <Card style={{ backgroundColor: C.redBg, borderColor: C.redBg }}><Text style={{ color: C.red }}>{error}</Text></Card> : null}
@@ -359,6 +363,98 @@ export function AccountSecurity({ nav }: ScreenProps) {
       <Field label="New password" placeholder="At least 4 characters" secureTextEntry value={newPassword} onChangeText={value => { setNewPassword(value); setError(''); }} autoCapitalize="none" />
       <Field label="Confirm new password" placeholder="Enter new password again" secureTextEntry value={confirmPassword} onChangeText={value => { setConfirmPassword(value); setError(''); }} autoCapitalize="none" />
       <Btn label={busy ? 'Updating…' : 'Update password'} disabled={busy} onPress={() => { void savePassword(); }} />
+    </Screen>
+  );
+}
+
+export function AccountManagement({ nav }: ScreenProps) {
+  const { backend, isAdmin, listManagedAccounts, setManagedAccountDisabled } = useStore();
+  const [accounts, setAccounts] = useState<ManagedAccount[]>([]);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const loadPage = async (nextPage: number, append: boolean) => {
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      const result = await listManagedAccounts(nextPage);
+      setAccounts(previous => append ? [...previous, ...result.accounts] : result.accounts);
+      setPage(nextPage);
+      setHasMore(result.hasMore);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to load accounts.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (backend === 'supabase' && isAdmin) void loadPage(1, false);
+  }, [backend, isAdmin]);
+
+  const confirmStatusChange = (account: ManagedAccount) => {
+    const disabled = !account.disabled;
+    Alert.alert(
+      disabled ? 'Disable this account?' : 'Enable this account?',
+      `${account.email} ${disabled ? 'will no longer be able to sign in.' : 'will be able to sign in again.'}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: disabled ? 'Disable account' : 'Enable account',
+          style: disabled ? 'destructive' : 'default',
+          onPress: () => {
+            void (async () => {
+              setBusy(true);
+              setError('');
+              try {
+                await setManagedAccountDisabled(account.id, disabled);
+                setAccounts(previous => previous.map(item => item.id === account.id ? { ...item, disabled } : item));
+              } catch (cause) {
+                setError(cause instanceof Error ? cause.message : 'Unable to update account.');
+              } finally {
+                setBusy(false);
+              }
+            })();
+          },
+        },
+      ],
+    );
+  };
+
+  return (
+    <Screen>
+      <Header title="Manage accounts" sub="Account access only; personal budgets and expenses stay private." onBack={nav.back} />
+      {backend !== 'supabase' || !isAdmin ? (
+        <Card><Text style={{ color: C.text }}>This screen is available only to an authorized Supabase admin account.</Text></Card>
+      ) : (
+        <>
+          <Card style={{ backgroundColor: '#EAF3E8', borderColor: '#EAF3E8' }}>
+            <Text style={{ color: C.green, fontWeight: '800' }}>Privacy protected</Text>
+            <Text style={{ color: C.text, lineHeight: 20, marginTop: 5 }}>Admins can view account email addresses and enable or disable sign-in. They cannot view account budgets, transactions, savings goals, or profile photos.</Text>
+          </Card>
+          {error ? <Card style={{ backgroundColor: C.redBg, borderColor: C.redBg }}><Text style={{ color: C.red }}>{error}</Text></Card> : null}
+          {accounts.map(account => (
+            <Card key={account.id}>
+              <Text style={{ color: C.text, fontWeight: '800' }}>{account.email || 'No email'}</Text>
+              <Text style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>Joined {new Date(account.createdAt).toLocaleDateString()}</Text>
+              <Text style={{ color: account.disabled ? C.red : C.green, fontSize: 12, fontWeight: '700', marginTop: 4 }}>{account.disabled ? 'Disabled' : 'Active'}</Text>
+              <Btn
+                label={account.disabled ? 'Enable account' : 'Disable account'}
+                variant={account.disabled ? 'outline' : 'ghost'}
+                disabled={busy}
+                onPress={() => confirmStatusChange(account)}
+              />
+            </Card>
+          ))}
+          {busy && !accounts.length ? <Text style={{ color: C.muted }}>Loading accounts…</Text> : null}
+          {!busy && !accounts.length && !error ? <Card><Text style={{ color: C.muted }}>No accounts found.</Text></Card> : null}
+          {hasMore ? <Btn variant="outline" label={busy ? 'Loading…' : 'Load more accounts'} disabled={busy} onPress={() => { void loadPage(page + 1, true); }} /> : null}
+          <Btn variant="ghost" label="Refresh accounts" disabled={busy} onPress={() => { void loadPage(1, false); }} />
+        </>
+      )}
     </Screen>
   );
 }
@@ -415,21 +511,26 @@ function InfoSection({ title, children }: { title: string; children: string }) {
 }
 
 export function PrivacyPolicy({ nav }: ScreenProps) {
+  const { backend } = useStore();
   return (
     <Screen>
-      <Header title="Privacy Policy" sub="Your information stays on your device." onBack={nav.back} />
+      <Header title="Privacy Policy" sub={backend === 'supabase' ? 'Your account data syncs securely.' : 'Your information stays on your device.'} onBack={nav.back} />
       <Text style={{ color: C.muted, fontSize: 12, marginBottom: 14 }}>Last updated: November 6, 2026</Text>
       <InfoSection title="Information you enter">
         AbotKaya saves the details you add, such as your name, email address, profile photo, allowance, budgets, expenses, savings goals, and app preferences.
       </InfoSection>
       <InfoSection title="Where your information is stored">
-        Your account and app data are stored locally on this device. AbotKaya does not send them to an AbotKaya server. Your information may be removed if you uninstall the app, clear its storage, or use Reset all data.
+        {backend === 'supabase'
+          ? 'Your account and budgeting data are stored in the AbotKaya Supabase project and cached on this device. Access is protected so each account can read only its own budgeting data. Logging out does not delete your online data.'
+          : 'Your account and app data are stored locally on this device. AbotKaya does not send them to an AbotKaya server. Your information may be removed if you uninstall the app, clear its storage, or use Reset all data.'}
       </InfoSection>
       <InfoSection title="Account security">
-        Your password is checked on this device. The app stores a salted password hash rather than your original password. Anyone with access to your unlocked device may still be able to access data saved on it.
+        {backend === 'supabase'
+          ? 'Supabase securely manages your online sign-in. AbotKaya does not store your account password in its app data.'
+          : 'Your password is checked on this device. The app stores a salted password hash rather than your original password. Anyone with access to your unlocked device may still be able to access data saved on it.'}
       </InfoSection>
       <InfoSection title="Camera permission">
-        You can choose a profile photo from your device’s photo library; the selected photo is saved with your local account. If you scan a supported product barcode, its number is sent to public product catalogs to look up product details. These catalogs do not include every product or provide your store’s current price. You can deny or revoke photo or camera access in your device settings; other expense-tracking features remain available.
+        {`You can choose a profile photo from your device’s photo library; it is saved ${backend === 'supabase' ? 'with your online account data' : 'with your local account'}. If you scan a supported product barcode, its number is sent to public product catalogs to look up product details. These catalogs do not include every product or provide your store’s current price. You can deny or revoke photo or camera access in your device settings; other expense-tracking features remain available.`}
       </InfoSection>
       <InfoSection title="Your choices">
         You can log out in Settings or use Reset all data to clear the current account’s app data. You can also manage camera permission through your device settings.

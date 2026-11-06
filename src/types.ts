@@ -26,8 +26,10 @@ export interface Meal {
   place: string;
   emoji: string;
   cat: string;
+  type: 'Breakfast' | 'Lunch' | 'Dinner' | 'Snacks';
   desc: string;
   ing: string[];
+  active: boolean;
 }
 
 export interface AppState {
@@ -42,12 +44,19 @@ export interface AppState {
   settings: { push: boolean; budget: boolean; meal: boolean };
 }
 
+export interface ManagedAccount {
+  id: string;
+  email: string;
+  createdAt: string;
+  disabled: boolean;
+}
+
 export type ScreenName =
   | 'Splash' | 'Login' | 'CreateAccount' | 'Setup' | 'Home' | 'AddExpense'
   | 'Transactions' | 'Scanner' | 'Budget' | 'EditBudget' | 'Meals'
-  | 'MealDetails' | 'Planner' | 'Reports' | 'Insights' | 'Savings'
+  | 'MealDetails' | 'Planner' | 'MealManagement' | 'Reports' | 'Insights' | 'Savings'
   | 'AddSavings' | 'Profile' | 'Settings' | 'PrivacyPolicy' | 'HelpSupport'
-  | 'About' | 'PasswordHelp' | 'AccountSecurity' | 'StateView';
+  | 'About' | 'PasswordHelp' | 'AccountSecurity' | 'AccountManagement' | 'StateView';
 
 export interface Navigation {
   params: Record<string, unknown>;

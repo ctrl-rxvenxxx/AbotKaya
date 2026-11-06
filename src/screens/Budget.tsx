@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, Modal, ScrollView } from 'react-native';
+import { Alert, View, Text, TouchableOpacity, Modal, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Crypto from 'expo-crypto';
 import { Screen, Header, Card, Btn, Field, Chip, Row, Bar, Section, fmt } from '../components';
 import { useStore, totals, MEALS } from '../store';
 import { C, CAT, CATS } from '../theme';
-import type { ExpenseCategory, Navigation, Period } from '../types';
+import type { ExpenseCategory, Meal, Navigation, Period } from '../types';
 
 type ScreenProps = { nav: Navigation };
 export function Budget({ nav }: ScreenProps) {
@@ -85,25 +86,25 @@ export function EditBudget({ nav }: ScreenProps) {
 
 const FILTERS: ReadonlyArray<readonly [string, number]> = [['Any price', 9999], ['Under ₱50', 50], ['Under ₱100', 100]];
 const MEAL_TYPES = ['All', 'Breakfast', 'Lunch', 'Dinner', 'Snacks'];
-const PREFERENCES = ['All meals', 'Rice meal', 'Healthy', 'Budget'];
-const MEAL_TYPE_BY_ID: Record<string, string> = {
-  m1: 'Breakfast', m2: 'Lunch', m3: 'Dinner', m4: 'Snacks',
-  m5: 'Lunch', m6: 'Dinner', m7: 'Snacks', m8: 'Dinner',
-};
+const PREFERENCES = ['All meals', 'Rice meal', 'Healthy', 'Budget', 'Snack'];
 export function Meals({ nav }: ScreenProps) {
-  const { s } = useStore(); const { left } = totals(s);
+  const { s, meals, mealError, isAdmin } = useStore(); const { left } = totals(s);
   const [q, setQ] = useState(''); const [f, setF] = useState(0);
   const [type, setType] = useState('All'); const [preference, setPreference] = useState('All meals');
-  const list = MEALS.filter(m =>
+  const list = meals.filter(m =>
+    m.active
+    &&
     m.price <= FILTERS[f][1]
     && m.name.toLowerCase().includes(q.toLowerCase())
-    && (type === 'All' || MEAL_TYPE_BY_ID[m.id] === type)
+    && (type === 'All' || m.type === type)
     && (preference === 'All meals' || m.cat.toLowerCase() === preference.toLowerCase())
   );
   const reset = () => { setQ(''); setF(0); setType('All'); setPreference('All meals'); };
   return (
     <Screen>
       <Header title="Good food, within reach" sub="Affordable ideas for your school week." />
+      {mealError ? <Card style={{ backgroundColor: C.redBg, borderColor: C.redBg }}><Text style={{ color: C.red }}>{mealError}</Text></Card> : null}
+      {isAdmin ? <Btn variant="outline" label="Manage meal menu" onPress={() => nav.go('MealManagement')} /> : null}
       <Field placeholder="Search Filipino favorites" value={q} onChangeText={setQ} />
       <Row style={{ flexWrap: 'wrap', marginBottom: 2 }}>
         {FILTERS.map((x, i) => <Chip key={x[0]} label={x[0]} active={f === i} onPress={() => setF(i)} />)}
@@ -146,7 +147,7 @@ export function Meals({ nav }: ScreenProps) {
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']; const SLOTS = ['Breakfast', 'Lunch', 'Dinner'];
 export function MealDetails({ nav }: ScreenProps) {
-  const { s, set } = useStore(); const mealId = nav.params.id; const m = MEALS.find(x => x.id === mealId) || MEALS[0];
+  const { s, set, meals } = useStore(); const mealId = nav.params.id; const m = meals.find(x => x.id === mealId) || MEALS[0];
   const [day, setDay] = useState('Mon'); const [slot, setSlot] = useState('Lunch');
   const add = () => { set({ plan: { ...s.plan, [day + '-' + slot]: m.id } }); nav.go('Planner'); };
   return (
@@ -166,8 +167,8 @@ export function MealDetails({ nav }: ScreenProps) {
 }
 
 export function Planner({ nav }: ScreenProps) {
-  const { s, set } = useStore(); const [pick, setPick] = useState<string | null>(null);
-  const cost = Object.values(s.plan).reduce((a, id) => a + (MEALS.find(m => m.id === id)?.price || 0), 0);
+  const { s, set, meals } = useStore(); const [pick, setPick] = useState<string | null>(null);
+  const cost = Object.values(s.plan).reduce((a, id) => a + (meals.find(m => m.id === id)?.price || 0), 0);
   const choose = (id: string | null) => {
     if (!pick) return;
     const p = { ...s.plan };
@@ -186,7 +187,7 @@ export function Planner({ nav }: ScreenProps) {
       {DAYS.map(d => (
         <Card key={d} style={{ padding: 12 }}>
           <Text style={{ fontWeight: '800', color: C.green, marginBottom: 6 }}>{d}</Text>
-          <Row>{SLOTS.map(sl => { const m = MEALS.find(x => x.id === s.plan[d + '-' + sl]);
+          <Row>{SLOTS.map(sl => { const m = meals.find(x => x.id === s.plan[d + '-' + sl]);
             return (<TouchableOpacity key={sl} onPress={() => setPick(d + '-' + sl)} style={{ flex: 1, marginRight: 6, padding: 8, borderRadius: 10, backgroundColor: m ? C.mint : '#F4F2EA', borderWidth: 1, borderColor: C.border }}>
               <Text style={{ fontSize: 10, color: C.muted }}>{sl}</Text>
               <Text style={{ fontSize: 12, fontWeight: '700', color: C.text }} numberOfLines={1}>{m ? m.emoji + ' ' + m.name : '+ Add'}</Text>
@@ -196,7 +197,7 @@ export function Planner({ nav }: ScreenProps) {
         <View style={{ flex: 1, backgroundColor: '#0008', justifyContent: 'flex-end' }}>
           <View style={{ backgroundColor: C.cream, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 20, maxHeight: '70%' }}>
             <Text style={{ fontWeight: '800', fontSize: 18, color: C.green, marginBottom: 10 }}>Choose a meal</Text>
-            <ScrollView>{MEALS.map(m => (
+            <ScrollView>{meals.filter(m => m.active).map(m => (
               <TouchableOpacity key={m.id} onPress={() => choose(m.id)} style={{ paddingVertical: 12, borderBottomWidth: 1, borderColor: C.border }}>
                 <Row style={{ justifyContent: 'space-between' }}><Text style={{ color: C.text, fontWeight: '600' }}>{m.emoji} {m.name}</Text><Text style={{ color: C.green, fontWeight: '800' }}>{fmt(m.price)}</Text></Row>
               </TouchableOpacity>))}</ScrollView>
@@ -204,6 +205,158 @@ export function Planner({ nav }: ScreenProps) {
             <Btn variant="ghost" label="Close" onPress={() => setPick(null)} />
           </View></View>
       </Modal>
+    </Screen>
+  );
+}
+
+type MealForm = {
+  id: string;
+  name: string;
+  price: string;
+  place: string;
+  emoji: string;
+  cat: string;
+  type: Meal['type'];
+  desc: string;
+  ingredients: string;
+  active: boolean;
+};
+
+const emptyMealForm = (): MealForm => ({
+  id: '',
+  name: '',
+  price: '',
+  place: '',
+  emoji: '🍽️',
+  cat: 'Budget',
+  type: 'Lunch',
+  desc: '',
+  ingredients: '',
+  active: true,
+});
+
+export function MealManagement({ nav }: ScreenProps) {
+  const { backend, isAdmin, meals, mealError, refreshMeals, saveMeal, setMealActive } = useStore();
+  const [form, setForm] = useState<MealForm | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const openMeal = (meal?: Meal) => setForm(meal ? {
+    id: meal.id,
+    name: meal.name,
+    price: String(meal.price),
+    place: meal.place,
+    emoji: meal.emoji,
+    cat: meal.cat,
+    type: meal.type,
+    desc: meal.desc,
+    ingredients: meal.ing.join(', '),
+    active: meal.active,
+  } : emptyMealForm());
+  const refresh = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      await refreshMeals();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to load meals.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const save = async () => {
+    const price = Number(form?.price);
+    if (!form || !form.name.trim() || !form.place.trim() || !form.desc.trim() || !Number.isFinite(price) || price < 0) {
+      setError('Enter a meal name, valid non-negative price, place, and description.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      await saveMeal({
+        id: form.id || Crypto.randomUUID(),
+        name: form.name.trim(),
+        price,
+        place: form.place.trim(),
+        emoji: form.emoji.trim() || '🍽️',
+        cat: form.cat,
+        type: form.type,
+        desc: form.desc.trim(),
+        ing: form.ingredients.split(',').map(item => item.trim()).filter(Boolean),
+        active: form.active,
+      });
+      setForm(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to save this meal.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const toggleActive = (meal: Meal) => {
+    Alert.alert(
+      meal.active ? 'Hide this meal?' : 'Show this meal?',
+      meal.active ? 'It will no longer appear in meal suggestions or new plans.' : 'It will appear in meal suggestions again.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: meal.active ? 'Hide meal' : 'Show meal', onPress: () => {
+          void (async () => {
+            setBusy(true);
+            setError('');
+            try {
+              await setMealActive(meal.id, !meal.active);
+            } catch (cause) {
+              setError(cause instanceof Error ? cause.message : 'Unable to change meal availability.');
+            } finally {
+              setBusy(false);
+            }
+          })();
+        } },
+      ],
+    );
+  };
+  if (backend !== 'supabase' || !isAdmin) {
+    return <Screen><Header title="Manage meal menu" onBack={nav.back} /><Card><Text style={{ color: C.text }}>This screen is available only to an authorized Supabase admin account.</Text></Card></Screen>;
+  }
+  return (
+    <Screen>
+      <Header title="Manage meal menu" sub="Edit shared meal suggestions for everyone." onBack={nav.back} />
+      <Card style={{ backgroundColor: '#EAF3E8', borderColor: '#EAF3E8' }}>
+        <Text style={{ color: C.green, fontWeight: '800' }}>Shared menu</Text>
+        <Text style={{ color: C.text, lineHeight: 20, marginTop: 5 }}>Meal details and estimated prices are visible to all users. Personal budgets and expenses stay private.</Text>
+      </Card>
+      {error || mealError ? <Card style={{ backgroundColor: C.redBg, borderColor: C.redBg }}><Text style={{ color: C.red }}>{error || mealError}</Text></Card> : null}
+      {form ? (
+        <Card>
+          <Text style={{ color: C.green, fontWeight: '800', fontSize: 17, marginBottom: 10 }}>{form.id ? 'Edit meal' : 'Add a meal'}</Text>
+          <Field label="Meal name" value={form.name} onChangeText={name => setForm({ ...form, name })} />
+          <Field label="Estimated price (₱)" keyboardType="decimal-pad" value={form.price} onChangeText={price => setForm({ ...form, price: price.replace(/[^\d.]/g, '') })} />
+          <Field label="Place" placeholder="e.g. Campus canteen" value={form.place} onChangeText={place => setForm({ ...form, place })} />
+          <Field label="Emoji" value={form.emoji} onChangeText={emoji => setForm({ ...form, emoji })} />
+          <Text style={{ color: C.text, fontWeight: '600', marginBottom: 6 }}>Category</Text>
+          <Row style={{ flexWrap: 'wrap' }}>{['Rice meal', 'Healthy', 'Budget', 'Snack'].map(cat => <Chip key={cat} label={cat} active={form.cat === cat} onPress={() => setForm({ ...form, cat })} />)}</Row>
+          <Text style={{ color: C.text, fontWeight: '600', marginBottom: 6 }}>Meal type</Text>
+          <Row style={{ flexWrap: 'wrap' }}>{(['Breakfast', 'Lunch', 'Dinner', 'Snacks'] as const).map(type => <Chip key={type} label={type} active={form.type === type} onPress={() => setForm({ ...form, type })} />)}</Row>
+          <Field label="Description" multiline value={form.desc} onChangeText={desc => setForm({ ...form, desc })} style={{ minHeight: 88, textAlignVertical: 'top' }} />
+          <Field label="Ingredients (comma-separated)" value={form.ingredients} onChangeText={ingredients => setForm({ ...form, ingredients })} />
+          <Btn label={busy ? 'Saving…' : 'Save meal'} disabled={busy} onPress={() => { void save(); }} />
+          <Btn variant="ghost" label="Cancel" disabled={busy} onPress={() => setForm(null)} />
+        </Card>
+      ) : (
+        <Btn label="Add meal" icon="add" disabled={busy} onPress={() => { setError(''); openMeal(); }} />
+      )}
+      {meals.map(meal => (
+        <Card key={meal.id}>
+          <Row style={{ justifyContent: 'space-between' }}>
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <Text style={{ color: C.text, fontWeight: '800' }}>{meal.emoji} {meal.name}</Text>
+              <Text style={{ color: C.muted, marginTop: 4 }}>{fmt(meal.price)} · {meal.type} · {meal.cat}</Text>
+              <Text style={{ color: meal.active ? C.green : C.red, fontWeight: '700', marginTop: 4 }}>{meal.active ? 'Visible to users' : 'Hidden'}</Text>
+            </View>
+            <TouchableOpacity onPress={() => openMeal(meal)} accessibilityRole="button" accessibilityLabel={`Edit ${meal.name}`}><Ionicons name="create-outline" size={23} color={C.green} /></TouchableOpacity>
+          </Row>
+          <Btn variant="outline" label={meal.active ? 'Hide meal' : 'Show meal'} disabled={busy} onPress={() => toggleActive(meal)} />
+        </Card>
+      ))}
+      <Btn variant="ghost" label={busy ? 'Refreshing…' : 'Refresh menu'} disabled={busy} onPress={() => { void refresh(); }} />
     </Screen>
   );
 }

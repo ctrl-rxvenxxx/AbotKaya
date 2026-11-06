@@ -41,18 +41,22 @@ export function Splash({ nav }: ScreenProps) {
 }
 
 export function Login({ nav }: ScreenProps) {
-  const { selectAccount, ready } = useStore();
+  const { selectAccount, ready, backend, backendError } = useStore();
   const [email, setEmail] = useState(''); const [pw, setPw] = useState('');
   const [show, setShow] = useState(false); const [busy, setBusy] = useState(false); const [err, setErr] = useState<FormErrors>({});
   const submit = async () => {
     if (busy) return;
     const e: FormErrors = {};
     if (!/\S+@\S+\.\S+/.test(email)) e.email = 'Enter a valid email address.';
-    if (pw.length < 4) e.pw = 'Password must be at least 4 characters.';
+    if (pw.length < (backend === 'supabase' ? 6 : 4)) e.pw = `Password must be at least ${backend === 'supabase' ? 6 : 4} characters.`;
     setErr(e); if (Object.keys(e).length) return;
     setBusy(true);
     try {
       const account = await selectAccount(email, pw);
+      if (!account) {
+        setErr({ account: 'Please verify your email using the link we sent, then log in.' });
+        return;
+      }
       account.onboarded ? nav.reset('Home') : nav.go('Setup');
     } catch (error) {
       setErr({ account: error instanceof Error ? error.message : 'Unable to open this account. Please try again.' });
@@ -65,11 +69,12 @@ export function Login({ nav }: ScreenProps) {
       <View style={{ marginTop: 20 }}><Logo /><Text style={{ fontWeight: '800', color: C.green, fontSize: 18, marginTop: 8 }}>AbotKaya</Text></View>
       <Text style={{ fontSize: 26, fontWeight: '800', color: C.green, marginTop: 24 }}>Welcome back, ka-budget.</Text>
       <Text style={{ color: C.muted, marginBottom: 24, marginTop: 4 }}>Log in to keep tracking your allowance.</Text>
+      {backendError ? <View style={{ backgroundColor: C.redBg, borderRadius: 12, padding: 12, marginBottom: 14 }}><Text style={{ color: C.red }}>{backendError}</Text></View> : null}
       {err.account ? <View style={{ backgroundColor: C.redBg, borderRadius: 12, padding: 12, marginBottom: 14 }}><Text style={{ color: C.red }}>{err.account}</Text></View> : null}
       <Field label="Email address" placeholder="you@school.edu.ph" autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} error={err.email} />
       <Field
         label="Password"
-        placeholder="At least 4 characters"
+        placeholder={`At least ${backend === 'supabase' ? 6 : 4} characters`}
         secureTextEntry={!show}
         value={pw}
         onChangeText={setPw}
@@ -90,16 +95,18 @@ export function Login({ nav }: ScreenProps) {
         <Text style={{ color: C.green, textAlign: 'right', fontWeight: '600', marginBottom: 10 }}>Forgot Password?</Text>
       </TouchableOpacity>
       <Btn label={busy ? 'Please wait…' : 'Login'} disabled={!ready || busy} onPress={submit} />
-      <Text style={{ textAlign: 'center', color: C.muted, marginVertical: 12 }}>For login, use the same email and password as when you created the account.</Text>
+      <Text style={{ textAlign: 'center', color: C.muted, marginVertical: 12 }}>
+        {backend === 'supabase' ? 'Your account and budgeting data sync securely across devices.' : 'For login, use the same email and password as when you created the account.'}
+      </Text>
       <Btn variant="outline" label="Create Account" disabled={!ready || busy} onPress={() => nav.go('CreateAccount')} />
       {!ready ? <Text style={{ textAlign: 'center', color: C.muted, marginTop: 10, fontSize: 11 }}>Loading saved accounts…</Text> : null}
-      <Text style={{ textAlign: 'center', color: C.muted, marginTop: 14, fontSize: 11 }}>Demo accounts are stored on this device only. This is not online authentication.</Text>
+      {backend === 'device' ? <Text style={{ textAlign: 'center', color: C.muted, marginTop: 14, fontSize: 11 }}>Device-only accounts are enabled until Supabase is configured.</Text> : null}
     </Screen>
   );
 }
 
 export function CreateAccount({ nav }: ScreenProps) {
-  const { selectAccount, ready } = useStore();
+  const { selectAccount, ready, backend } = useStore();
   const [name, setName] = useState(''); const [email, setEmail] = useState(''); const [pw, setPw] = useState('');
   const [show, setShow] = useState(false); const [busy, setBusy] = useState(false); const [err, setErr] = useState<FormErrors>({});
   const submit = async () => {
@@ -107,11 +114,15 @@ export function CreateAccount({ nav }: ScreenProps) {
     const e: FormErrors = {};
     if (!name.trim()) e.name = 'Enter your name to create an account.';
     if (!/\S+@\S+\.\S+/.test(email)) e.email = 'Enter a valid email address.';
-    if (pw.length < 4) e.pw = 'Password must be at least 4 characters.';
+    if (pw.length < (backend === 'supabase' ? 6 : 4)) e.pw = `Password must be at least ${backend === 'supabase' ? 6 : 4} characters.`;
     setErr(e); if (Object.keys(e).length) return;
     setBusy(true);
     try {
       const account = await selectAccount(email, pw, true, name);
+      if (!account) {
+        setErr({ account: 'Account created. Check your email to verify it, then log in.' });
+        return;
+      }
       account.onboarded ? nav.reset('Home') : nav.reset('Setup');
     } catch (error) {
       setErr({ account: error instanceof Error ? error.message : 'Unable to create your account. Please try again.' });
@@ -127,7 +138,7 @@ export function CreateAccount({ nav }: ScreenProps) {
       <Field label="Email address" placeholder="you@school.edu.ph" autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} error={err.email} />
       <Field
         label="Password"
-        placeholder="At least 4 characters"
+        placeholder={`At least ${backend === 'supabase' ? 6 : 4} characters`}
         secureTextEntry={!show}
         value={pw}
         onChangeText={setPw}
@@ -151,6 +162,7 @@ export function CreateAccount({ nav }: ScreenProps) {
 }
 
 export function PasswordHelp({ nav }: ScreenProps) {
+  const { backend } = useStore();
   const email = typeof nav.params.email === 'string' ? nav.params.email : '';
   const contactSupport = async () => {
     const subject = encodeURIComponent('AbotKaya password help');
@@ -166,17 +178,21 @@ export function PasswordHelp({ nav }: ScreenProps) {
 
   return (
     <Screen>
-      <Header title="Forgot password?" sub="Get help accessing your account." onBack={nav.back} />
+      <Header title="Forgot password?" sub={backend === 'supabase' ? 'Get help with your online account.' : 'Get help accessing your account.'} onBack={nav.back} />
       <Card style={{ backgroundColor: '#EAF3E8', borderColor: '#EAF3E8' }}>
         <Ionicons name="lock-closed-outline" size={24} color={C.green} style={{ marginBottom: 8 }} />
-        <Text style={{ color: C.green, fontWeight: '800', fontSize: 16 }}>Your account is stored on this device</Text>
+        <Text style={{ color: C.green, fontWeight: '800', fontSize: 16 }}>{backend === 'supabase' ? 'Online password recovery is not set up yet' : 'Your account is stored on this device'}</Text>
         <Text style={{ color: C.text, lineHeight: 21, marginTop: 8 }}>
-          AbotKaya currently has no online password reset or email verification. We can’t safely reset a local account password remotely.
+          {backend === 'supabase'
+            ? 'Contact AbotKaya support for help recovering access. Never send your password to anyone.'
+            : 'AbotKaya has no online password reset for a local account. We can’t safely reset a local password remotely.'}
         </Text>
       </Card>
       <Card>
         <Text style={{ color: C.text, lineHeight: 21 }}>
-          If you still have access to your password, log in as usual. If you’re locked out, contact support for guidance. Your saved expenses and goals stay on this device, so don’t uninstall the app or reset its data if you want to keep them.
+          {backend === 'supabase'
+            ? 'If you can still log in, change your password from Profile → Account Security. If you’re locked out, contact support for guidance.'
+            : 'If you still have access to your password, log in as usual. If you’re locked out, contact support for guidance. Your saved expenses and goals stay on this device, so don’t uninstall the app or reset its data if you want to keep them.'}
         </Text>
         {email ? <Text style={{ color: C.muted, marginTop: 10 }}>Account email: {email}</Text> : null}
       </Card>

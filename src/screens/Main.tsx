@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, Alert, Image, ActivityIndicator } from 'r
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Screen, Header, Card, Btn, Field, Chip, Row, Bar, Section, fmt } from '../components';
-import { useStore, totals, today, parseDate, MEALS } from '../store';
+import { useStore, totals, today, parseDate } from '../store';
 import { C, CAT, CATS } from '../theme';
 import type { ExpenseCategory, Navigation, ScreenName, Transaction } from '../types';
 import type { ComponentProps } from 'react';
@@ -44,13 +44,14 @@ function productCategory(name: string, tags: string[], kind: (typeof PRODUCT_CAT
 }
 
 export function Home({ nav }: ScreenProps) {
-  const { s, ready } = useStore();
+  const { s, ready, meals } = useStore();
   const { by, spent, left } = totals(s);
   if (!ready) return (
     <Screen><Header title="Your dashboard" sub="Loading your saved allowance and expenses…" />
       {[90, 60, 60, 60, 60].map((h, i) => <View key={i} style={{ height: h, borderRadius: 14, backgroundColor: '#E4E2D8', marginBottom: 12 }} />)}</Screen>
   );
   const top = CATS.slice().sort((a, b) => (by[b] || 0) - (by[a] || 0))[0];
+  const featuredMeal = meals.find(meal => meal.id === 'm2' && meal.active) || meals.find(meal => meal.active);
   return (
     <Screen>
       <Text style={{ fontSize: 22, fontWeight: '800', color: C.green }}>Magandang umaga, {s.user.name} 👋</Text>
@@ -76,10 +77,12 @@ export function Home({ nav }: ScreenProps) {
         <TouchableOpacity onPress={() => nav.go('Transactions')}><Text style={{ color: C.green, fontWeight: '700' }}>See all</Text></TouchableOpacity></Row>
       <Card>{s.tx.slice(0, 3).map(t => <TxRow key={t.id} t={t} />)}
         {!s.tx.length ? <Text style={{ color: C.muted }}>No transactions yet.</Text> : null}</Card>
-      <Card onPress={() => nav.go('MealDetails', { id: 'm2' })}>
-        <Text style={{ color: C.muted, fontSize: 12 }}>MEAL IDEA FOR TODAY</Text>
-        <Text style={{ fontWeight: '800', color: C.text, fontSize: 16, marginTop: 2 }}>{MEALS[1].emoji} {MEALS[1].name} · {fmt(MEALS[1].price)}</Text>
-      </Card>
+      {featuredMeal ? (
+        <Card onPress={() => nav.go('MealDetails', { id: featuredMeal.id })}>
+          <Text style={{ color: C.muted, fontSize: 12 }}>MEAL IDEA FOR TODAY</Text>
+          <Text style={{ fontWeight: '800', color: C.text, fontSize: 16, marginTop: 2 }}>{featuredMeal.emoji} {featuredMeal.name} · {fmt(featuredMeal.price)}</Text>
+        </Card>
+      ) : null}
     </Screen>
   );
 }

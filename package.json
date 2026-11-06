@@ -9,11 +9,13 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "build:android:apk": "npx eas-cli@latest build --platform android --profile preview"
+    "build:android:apk": "npx eas-cli@latest build --platform android --profile preview",
+    "deploy:admin": "npx supabase functions deploy admin-users"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@supabase/supabase-js": "^2.119.0",
     "expo": "~58.0.23",
     "expo-camera": "~58.0.14",
     "expo-crypto": "~58.0.7",
@@ -22,7 +24,8 @@
     "react": "19.3.0",
     "react-native": "0.88.1",
     "react-native-safe-area-context": "~5.11.1",
-    "react-native-svg": "15.16.0"
+    "react-native-svg": "15.16.0",
+    "react-native-url-polyfill": "^4.0.0"
   },
   "devDependencies": {
     "@types/react": "~19.3.0",
